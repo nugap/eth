@@ -1,0 +1,190 @@
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:">
+<title>nugap hodl (ETH)</title>
+<style>body{font-family:monospace;padding:8px;max-width:560px;margin:0 auto}input,textarea,select{width:100%;margin:3px 0;padding:6px;font-family:monospace;box-sizing:border-box}button{margin:3px 0;padding:8px 16px;cursor:pointer}pre{white-space:pre-wrap;word-break:break-all;background:#f0f0f0;padding:8px;margin:3px 0}.sec{display:none}hr{margin:8px 0}.mono{font-family:monospace;word-break:break-all}.warn{background:#fff3cd;padding:8px;margin:3px 0}.words{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0}.words span{background:#eee;padding:4px 8px;border:1px solid #ccc}</style>
+<div id="online-warn" class="warn" style="display:none;background:#fcc"><b>WARNING:</b> This device is ONLINE. Disconnect from the internet!</div>
+<div id="notify" style="position:fixed;top:0;left:0;right:0;padding:8px;text-align:center;display:none"></div>
+<div id="sec-landing" class="sec" style="display:block">
+<b>nugap hodl (ETH)</b> <span id="net-label"></span><br><br>
+<button data-go="sec-create">Create New Wallet</button><br>
+<button data-go="sec-import">Import Existing Wallet</button></div>
+<div id="sec-create" class="sec">
+<b>New Wallet</b><br><hr><span>Word Count</span><br>
+<select id="sel-wc"><option value="12">12 words</option><option value="24">24 words</option></select><br>
+<span>BIP-39 Passphrase (optional)</span><br>
+<input id="inp-pass-create" type="password" placeholder="Leave empty for none"><br>
+<button id="btn-generate">Generate</button>
+<button data-go="sec-landing">Back</button></div>
+<div id="sec-mnemonic" class="sec">
+<b>Your Mnemonic</b><br>
+<div class="warn">Write these words down on paper. Never store digitally.</div>
+<div id="mnemonic-grid" class="words"></div>
+<span id="mnemonic-timer"></span><br>
+<button id="btn-wrote-down">I've Written Them Down</button></div>
+<div id="sec-verify" class="sec">
+<b>Verify Mnemonic</b><br><hr>
+<div id="verify-fields"></div>
+<button id="btn-show-again">Show Again</button>
+<button id="btn-verify">Verify</button></div>
+<div id="sec-import" class="sec">
+<b>Import Wallet</b><br><hr><span>Mnemonic (12 or 24 words)</span><br>
+<textarea id="inp-mnemonic" rows="4" placeholder="word1 word2 word3 ..."></textarea><br>
+<span>BIP-39 Passphrase (optional)</span><br>
+<input id="inp-pass-import" type="password" placeholder="Leave empty for none"><br>
+<button id="btn-import-go">Import</button>
+<button data-go="sec-landing">Back</button></div>
+<div id="sec-dash" class="sec">
+<b>Dashboard</b> <span id="dash-info"></span><br><hr>
+<span>Address: </span><span id="dash-addr" class="mono"></span><br>
+<span>Fingerprint: </span><span id="dash-fp" class="mono"></span><br><hr>
+<button data-go="sec-export">Export Address</button><br>
+<button data-go="sec-scan">Sign Transaction</button><br>
+<button id="btn-show-mn">Show Mnemonic</button><br>
+<button id="btn-wipe" style="color:red">Wipe Wallet</button></div>
+<div id="sec-export" class="sec">
+<b>Address</b><br><hr><span>Copy this to yolo:</span><br>
+<textarea id="export-addr" rows="2" readonly></textarea><br>
+<button data-copy="export-addr">Copy</button>
+<button data-go="sec-dash">Back</button></div>
+<div id="sec-scan" class="sec">
+<b>Import Unsigned Transaction</b><br><hr><span>Paste unsigned TX from yolo (base64):</span><br>
+<textarea id="inp-utx" rows="6" placeholder="base64 encoded unsigned TX..."></textarea><br>
+<button id="btn-import-utx">Import &amp; Sign</button>
+<button data-go="sec-dash">Back</button></div>
+<div id="sec-signed" class="sec">
+<b>Signed Transaction</b><br><hr>
+<pre id="review-body"></pre>
+<div class="warn">Verify the recipient address before pasting to yolo!</div>
+<span>Copy this to yolo:</span><br>
+<textarea id="signed-out" rows="6" readonly></textarea><br>
+<button data-copy="signed-out">Copy</button>
+<button data-go="sec-dash">Done</button></div>
+<div id="sec-show-mn" class="sec">
+<b>Mnemonic</b><br>
+<div class="warn">Make sure nobody is watching!</div>
+<div id="show-mn-grid" class="words"></div>
+<button id="btn-hide-mn">Back</button></div>
+<script>
+/* __BUNDLE_JS__ */
+</script>
+<script>
+(()=>{
+'use strict';
+const { ethers } = nugap;
+const NETWORK = '/* __NETWORK__ */';
+const CHAIN_ID = NETWORK === 'mainnet' ? 1 : 11155111;
+const $ = id => document.getElementById(id), $v = (id, v) => v === void 0 ? $(id).value : ($(id).value = v),
+  $t = (id, t) => t === void 0 ? $(id).innerText : ($(id).innerText = t),
+  $show = id => $(id).style.display = 'block', $hide = id => $(id).style.display = 'none';
+const SECS = ['sec-landing','sec-create','sec-mnemonic','sec-verify','sec-import','sec-dash','sec-export','sec-scan','sec-signed','sec-show-mn'];
+const go = id => { SECS.forEach($hide); $show(id) };
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (t.dataset.go) go(t.dataset.go);
+  if (t.dataset.copy) navigator.clipboard.writeText($v(t.dataset.copy)).then(() => notify('Copied', 'ok'));
+});
+$t('net-label', NETWORK === 'mainnet' ? '[Mainnet]' : '[Sepolia]');
+const S = { mnemonic: null, passphrase: '', wallet: null };
+let notifyTimer;
+const notify = (msg, type) => {
+  const el = $('notify');
+  el.innerText = msg; el.style.display = '';
+  el.style.background = type === 'ok' ? '#cfc' : type === 'warn' ? '#ffc' : '#fcc';
+  clearTimeout(notifyTimer); notifyTimer = setTimeout(() => el.style.display = 'none', 4000);
+};
+const checkOnline = () => $('online-warn').style.display = navigator.onLine ? 'block' : 'none';
+checkOnline();
+window.addEventListener('online', () => { checkOnline(); notify('Internet detected! Disconnect!') });
+window.addEventListener('offline', checkOnline);
+const PATH = "m/44'/60'/0'/0/0";
+const makeWallet = (phrase, pass) => {
+  const mn = ethers.Mnemonic.fromPhrase(phrase, pass || undefined);
+  return ethers.HDNodeWallet.fromMnemonic(mn, PATH);
+};
+const displayWords = (id, words) => {
+  $(id).innerHTML = words.split(' ').map((w, i) => '<span>' + (i + 1) + '. ' + w + '</span>').join('');
+};
+const goToDash = () => {
+  $t('dash-addr', S.wallet.address);
+  $t('dash-fp', S.wallet.address.substring(2, 10).toLowerCase());
+  $t('dash-info', NETWORK === 'mainnet' ? 'Chain 1' : 'Sepolia 11155111');
+  go('sec-dash');
+  $v('export-addr', S.wallet.address);
+};
+const activateWallet = () => {
+  try {
+    S.wallet = makeWallet(S.mnemonic, S.passphrase);
+    notify('Wallet activated', 'ok'); goToDash();
+  } catch(e) { notify('Error: ' + e.message) }
+};
+$('btn-generate').onclick = () => {
+  S.passphrase = $v('inp-pass-create') || '';
+  const bits = parseInt($v('sel-wc')) === 24 ? 32 : 16;
+  const entropy = ethers.randomBytes(bits);
+  const mn = ethers.Mnemonic.fromEntropy(entropy);
+  S.mnemonic = mn.phrase;
+  displayWords('mnemonic-grid', S.mnemonic); go('sec-mnemonic');
+  let sec = 60;
+  $t('mnemonic-timer', 'Auto-hide in ' + sec + 's');
+  const timer = setInterval(() => {
+    if (--sec <= 0) { clearInterval(timer); $('mnemonic-grid').innerHTML = '<span>Hidden</span>'; $t('mnemonic-timer', ''); return }
+    $t('mnemonic-timer', 'Auto-hide in ' + sec + 's');
+  }, 1000);
+};
+$('btn-wrote-down').onclick = () => {
+  const words = S.mnemonic.split(' '), indices = [];
+  while (indices.length < 3) {
+    const r = crypto.getRandomValues(new Uint8Array(1))[0] % words.length;
+    if (indices.indexOf(r) < 0) indices.push(r);
+  }
+  indices.sort((a, b) => a - b);
+  $('verify-fields').innerHTML = indices.map(idx =>
+    '<span>Word #' + (idx + 1) + '</span><br><input data-idx="' + idx + '" type="text" autocomplete="off">'
+  ).join(''); go('sec-verify');
+};
+$('btn-show-again').onclick = () => { displayWords('mnemonic-grid', S.mnemonic); go('sec-mnemonic') };
+$('btn-verify').onclick = () => {
+  const words = S.mnemonic.split(' '); let ok = true;
+  document.querySelectorAll('#verify-fields input').forEach(inp => {
+    if (inp.value.trim().toLowerCase() !== words[parseInt(inp.getAttribute('data-idx'))]) ok = false;
+  });
+  if (!ok) { notify('Incorrect words'); return } activateWallet();
+};
+$('btn-import-go').onclick = () => {
+  const raw = $v('inp-mnemonic').trim().toLowerCase().replace(/\s+/g, ' '), words = raw.split(' ');
+  if (words.length !== 12 && words.length !== 24) { notify('Need 12 or 24 words, got ' + words.length); return }
+  try { ethers.Mnemonic.fromPhrase(raw) } catch(e) { notify('Invalid mnemonic: ' + e.message); return }
+  S.mnemonic = raw; S.passphrase = $v('inp-pass-import') || ''; activateWallet();
+};
+$('btn-import-utx').onclick = async () => {
+  const text = $v('inp-utx').trim();
+  if (!text) { notify('Paste unsigned TX base64'); return }
+  try {
+    const hex = atob(text);
+    const tx = ethers.Transaction.from(hex);
+    const info = 'To:     ' + (tx.to || '(contract creation)') +
+      '\nValue:  ' + ethers.formatEther(tx.value) + ' ETH' +
+      '\nNonce:  ' + tx.nonce +
+      '\nChain:  ' + tx.chainId.toString() +
+      '\nGas:    ' + tx.gasLimit.toString() +
+      (tx.maxFeePerGas ? '\nMaxFee: ' + ethers.formatUnits(tx.maxFeePerGas, 'gwei') + ' gwei' : '') +
+      (tx.maxPriorityFeePerGas ? '\nTip:    ' + ethers.formatUnits(tx.maxPriorityFeePerGas, 'gwei') + ' gwei' : '') +
+      (tx.gasPrice ? '\nPrice:  ' + ethers.formatUnits(tx.gasPrice, 'gwei') + ' gwei' : '');
+    $t('review-body', info);
+    const signed = await S.wallet.signTransaction(tx);
+    $v('signed-out', signed); go('sec-signed'); notify('Signed!', 'ok');
+  } catch(e) { notify('Error: ' + e.message) }
+};
+$('btn-show-mn').onclick = () => {
+  if (!confirm('Show sensitive data?')) return;
+  displayWords('show-mn-grid', S.mnemonic); go('sec-show-mn');
+};
+$('btn-hide-mn').onclick = () => { $('show-mn-grid').innerHTML = ''; goToDash() };
+$('btn-wipe').onclick = () => {
+  if (!confirm('Erase wallet? Make sure you backed up your mnemonic.')) return;
+  if (!confirm('Are you sure?')) return;
+  S.mnemonic = null; S.passphrase = ''; S.wallet = null;
+  notify('Wiped', 'warn'); go('sec-landing');
+};
+})();
+</script>
