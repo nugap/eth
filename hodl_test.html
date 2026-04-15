@@ -23823,7 +23823,8 @@ $('btn-import-utx').onclick = async () => {
   const text = $v('inp-utx').trim();
   if (!text) { notify('Paste unsigned TX base64'); return }
   try {
-    const hex = atob(text);
+    const bin = atob(text);
+    let hex = '0x'; for (let i = 0; i < bin.length; i++) hex += bin.charCodeAt(i).toString(16).padStart(2, '0');
     const tx = ethers.Transaction.from(hex);
     const info = 'To:     ' + (tx.to || '(contract creation)') +
       '\nValue:  ' + ethers.formatEther(tx.value) + ' ETH' +
